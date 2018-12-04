@@ -13,8 +13,15 @@ auth_token=os.getenv("auth_token")
 client = Client(account_sid, auth_token)
 
 for number in phone_numbers:
+    print("number", number)
     call = client.calls.create(
-        url='https://a71b7195.ngrok.io/ivr/welcome',
+        url='https://a71b7195.ngrok.io/welcome',
+        status_callback="https://a71b7195.ngrok.io/completed",
+        status_callback_event=["completed"],
+        status_callback_method=["POST"],
         to=number,
-        from_='+15512136905')
+        from_='+15512136905',
+        record=True,
+        recording_channels="dual"
+    )
     print(call.sid)

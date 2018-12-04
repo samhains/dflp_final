@@ -1,4 +1,8 @@
-﻿from flask import (
+﻿# import urllib3
+import urllib.request
+from .BaseThread import BaseThread
+import requests
+from flask import (
     flash,
     render_template,
     redirect,
@@ -12,7 +16,7 @@ from ivr_phone_tree_python import app
 from ivr_phone_tree_python.view_helpers import twiml
 from .user_data_list import user_data_list
 
-
+recording_url_list = []
 
 
 @app.route('/')
@@ -20,93 +24,79 @@ from .user_data_list import user_data_list
 def home():
     return render_template('index.html')
 
-@app.route('/ivr/welcome', methods=['POST'])
+
+@app.route('/welcome', methods=['POST'])
 def welcome():
     response = VoiceResponse()
-    gather = Gather(input='speech', action='/first_response')
-    print("number:"+request.form["Called"])
-    response_text = "I don't know who you are"
+    gather = Gather(input='speech', action='/menu')
+    name = ""
     for user_data in user_data_list:
         number_called = request.form["Called"]
         if number_called == user_data.phone_number:
-            response_text = user_data.info
+            name = user_data.name
+
+    response_text = "Welcome {}, please choose from one of the following options. To hear your location history, please say 'locations'. To hear your purchase history please say 'purchases'".format(name)
 
     gather.say(response_text)
     response.append(gather)
-    # with response.gather(
-    #     num_digits=1, action=url_for('menu'), method="POST"
-    # ) as g:
-    #     g.say(message="Thanks for calling the E T Phone Home Service. " +
-    #           "Please press 1 for directions." +
-    #           "Press 2 for a list of planets to call.", loop=3)
     return twiml(response)
 
-@app.route('/first_response', methods=['POST'])
+
+# @app.route('/purchases', methods=['POST'])
+def _list_purchases(response):
+    response_text = "I don't know what you have purchased."
+    for user_data in user_data_list:
+        number_called = request.form["Called"]
+        if number_called == user_data.phone_number:
+            response_text = user_data.purchases
+
+    response.say(response_text)
+    return response
+
+
+# @app.route('/location', methods=['POST'])
+def _list_locations(response):
+    response_text = "I don't know where you have been."
+    for user_data in user_data_list:
+        number_called = request.form["Called"]
+        if number_called == user_data.phone_number:
+            response_text = user_data.locations
+
+    response.say(response_text)
+    return response
+
+option_actions = {'location': {"function": _list_locations, 'keywords': ["location", "locations", "where"]},
+                  'purchases': {"function": _list_purchases, 'keywords': ["purchase", "purchases", "history", "purchase history"]}}
+
+
+@app.route('/completed', methods=['POST'])
 def completed():
-    print(request)
-    print(request.form)
-    print(request.form['SpeechResult'])
-    return _redirect_welcome()
+    response = VoiceResponse()
+    # recording_url_list.append(request.form["RecordingUrl"])
+    mp3_url = request.form["RecordingUrl"]+".mp3"
+    filename = mp3_url.split("/")[-1]
+    #kxfilename = "jimmy2.mp3"
+    print("filename:"+filename)
+    print("mp3_url:"+mp3_url)
+    r = requests.get(mp3_url)
 
-@app.route('/ivr/menu', methods=['POST'])
+    with open(filename, 'wb') as f:
+        f.write(r.content)
+        f.close()
+    # urllib.request.urlretrieve(mp3_url, filename)
+    return '', 204
+
+
+@app.route('/menu', methods=['POST'])
 def menu():
-    selected_option = request.form['Digits']
-    print("in menu", selected_option)
-    option_actions = {'1': _give_instructions,
-                      '2': _list_planets}
+    selected_option = request.form["SpeechResult"]
 
-    if selected_option in option_actions:
-        response = VoiceResponse()
-        option_actions[selected_option](response)
-        return twiml(response)
-
+    for option in option_actions:
+        if selected_option in option_actions[option]["keywords"]:
+            response = VoiceResponse()
+            option_actions[option]["function"](response)
+            return twiml(response)
     return _redirect_welcome()
-
-
-@app.route('/ivr/planets', methods=['POST'])
-def planets():
-    selected_option = request.form['Digits']
-    option_actions = {'2': "+12024173378",
-                      '3': "+12027336386",
-                      "4": "+12027336637"}
-
-    if selected_option in option_actions:
-        response = VoiceResponse()
-        response.dial(option_actions[selected_option])
-        return twiml(response)
-
-    return _redirect_welcome()
-
-
-# private methods
-
-def _give_instructions(response):
-    response.say("To get to your extraction point, get on your bike and go " +
-                 "down the street. Then Left down an alley. Avoid the police" +
-                 " cars. Turn left into an unfinished housing development." +
-                 "Fly over the roadblock. Go past the moon. Soon after " +
-                 "you will see your mother ship.",
-                 voice="alice", language="en-GB")
-
-    response.say("Thank you for calling the E T Phone Home Service - the " +
-                 "adventurous alien's first choice in intergalactic travel")
-
-    response.hangup()
-    return response
-
-
-def _list_planets(response):
-    with response.gather(
-        numDigits=1, action=url_for('planets'), method="POST"
-    ) as g:
-        g.say("To call the planet Broh doe As O G, press 2. To call the " +
-              "planet DuhGo bah, press 3. To call an oober asteroid " +
-              "to your location, press 4. To go back to the main menu " +
-              " press the star key.",
-              voice="alice", language="en-GB", loop=3)
-
-    return response
-
 
 def _redirect_welcome():
     response = VoiceResponse()
